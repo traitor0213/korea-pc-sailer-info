@@ -1,1 +1,1 @@
-gcc server.c -o server.exe -static-libgcc
+gcc server.c -o server.exe 
