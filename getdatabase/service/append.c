@@ -1,13 +1,15 @@
 #include <stdio.h>
 #include <windows.h>
 
-void GetCsvMember(char *writen, const char *buffer, int colum)
+int GetCsvMember(char *writen, int size, const char *buffer, int colum)
 {
     int length = strlen(buffer);
 
     int y = 0;
     for (int i = 0; i != length; i += 1)
     {
+        if(i >= size) break;
+
         if (buffer[i] == '\n')
             break;
 
@@ -17,7 +19,9 @@ void GetCsvMember(char *writen, const char *buffer, int colum)
             y = 0;
 
             if (colum == 0)
+            {
                 break;
+            }
         }
         else
         {
@@ -27,8 +31,9 @@ void GetCsvMember(char *writen, const char *buffer, int colum)
         }
     }
 
-    return;
+    return 0;
 }
+
 
 int StartTime;
 int EndTime;
@@ -118,8 +123,9 @@ void bubble_sort(char **arr, int count) // 매개변수로 정렬할 배열과 �
     {
         for (int j = 0; j < count - 1; j++) // 요소의 개수 - 1만큼 반복
         {
-            if (atoi(arr[j]) < atoi(arr[j + 1])) // 현재 요소의 값과 다음 요소의 값을 비교하여
+            if (atoi(arr[j] + 26) < atoi(arr[j + 1] + 26) ) // 현재 요소의 값과 다음 요소의 값을 비교하여
             {                                    // 작은 값을
+
                 temp = arr[j];
                 arr[j] = arr[j + 1];
                 arr[j + 1] = temp; // 다음 요소로 보냄
@@ -128,152 +134,224 @@ void bubble_sort(char **arr, int count) // 매개변수로 정렬할 배열과 �
     }
 }
 
+#define BUFFER_SIZE 1024
+
+int WriteBindDataBase(const char *BindDataBaseFilePath, int *Filter, int FilterSize)
+{
+    int AddLineCount = 0;
+
+    FILE *BindDataBaseFilePointer = NULL;
+    BindDataBaseFilePointer = fopen(BindDataBaseFilePath, "w");
+
+    FILE *DataBaseFilePointer = NULL;
+    const char *DataBasePath = "./database/%d.csv";
+
+    int DataBaseFileIndex = 0;
+    char DataBaseFilePath[BUFFER_SIZE];
+    memset(DataBaseFilePath, 0, sizeof(DataBasePath));
+
+    printf("[+] merge database..\n");
+
+    for(;;)
+    {
+        sprintf(DataBaseFilePath, DataBasePath, DataBaseFileIndex);
+
+        char LineBuffer[BUFFER_SIZE];
+        char CsvBuffer[BUFFER_SIZE];
+        char WriteBuffer[BUFFER_SIZE];
+
+        char TimeBuffer[BUFFER_SIZE];
+
+        DataBaseFilePointer = fopen(DataBaseFilePath, "r");
+        //The file doe's not exist
+        if(DataBaseFilePointer == NULL) break;
+
+        while(fgets(LineBuffer, sizeof(LineBuffer), DataBaseFilePointer) != NULL)
+        {
+            memset(WriteBuffer, 0, sizeof(WriteBuffer));
+            
+            int FilterIndex = 0;
+            for(; FilterIndex != FilterSize; FilterIndex += 1)
+            {
+                ZeroMemory(CsvBuffer, sizeof(CsvBuffer));
+                GetCsvMember(CsvBuffer, sizeof(CsvBuffer), LineBuffer, Filter[FilterIndex]);
+                
+                if(FilterIndex == 0) //time
+                {
+                    if(atoi(CsvBuffer) == 0 || atoi(CsvBuffer + 5) == 0 || atoi(CsvBuffer + 8) == 0)
+                    {
+                        FilterIndex = -1;
+                        break;
+                    }
+                    
+                    sprintf(TimeBuffer, "%0004d%02d%02d", atoi(CsvBuffer), atoi(CsvBuffer + 5), atoi(CsvBuffer + 8));
+                    sprintf(WriteBuffer, "%s%s", WriteBuffer, TimeBuffer);
+                    
+                    int CurrentTime = atoi(TimeBuffer);
+
+                    if( (CurrentTime >= StartTime && CurrentTime <= EndTime) == FALSE)
+                    {
+                        FilterIndex = -1;
+                        break;
+                    }
+
+                    //TimeBuffer
+                }
+                else if(FilterIndex + 1 == FilterSize)
+                {
+                    if(strstr(CsvBuffer, "//") == NULL)
+                    {
+                        FilterIndex = -1;
+                        break;
+                    }
+
+                    sprintf(WriteBuffer, "%s<a href=\"%s\">%s</a>", WriteBuffer, CsvBuffer, CsvBuffer);
+                }
+                else 
+                {
+                    sprintf(WriteBuffer, "%s<td>%s</td>", WriteBuffer, CsvBuffer);
+                }
+            }
+            
+            if(FilterIndex != -1)
+            {
+                fprintf(BindDataBaseFilePointer,    "<br><table border=\"1\"><tr>%s</tr>" 
+                "<br>"
+                "<form action=\"_%%s\" method=\"GET\">"
+                "<input type=\"text\" name=\"comment-%%d\" />"
+                "<input type=\"submit\" />"
+                "</form>"
+                "</table>\r\n", WriteBuffer);
+                                                    
+                AddLineCount += 1;
+            }
+        }
+
+        fclose(DataBaseFilePointer);
+        
+        DataBaseFileIndex += 1;
+    }
+    fclose(BindDataBaseFilePointer);
+    
+    printf("[+] done!\n");
+
+
+    return AddLineCount;
+}
+
 int main()
 {
     GetSetting();
 
-    int filter[] = {
+    int Filter[] = {
         9,  //신고일자
         3,  //상호
         6,  //대표자명
         15, //취급품목
-        16  //domain
+        16 //link
     };
-    int l = sizeof(filter) / sizeof(int);
+    int FilterSize = sizeof(Filter) / sizeof(int);
+    const char *BindDataBaseFilePath = "./bind.csv";
 
-    DWORD TotalLines = 0;
-    DWORD TotalSize = 0;
+    int DBLINE_COUNT = WriteBindDataBase(BindDataBaseFilePath, Filter, FilterSize);
 
-    DWORD OpenCount = 0;
+    char buffer[BUFFER_SIZE];
 
-    FILE *fp;
-    char line[1024];
-    char parsed[1024];
+    int FAddLineCount = 0;
+    int NAddLineCount = 0;
 
-    char WriteBuffer[4096];
+    const char *FilterDataBaseFilePath = "../../server/backend/filter-append.csv";
+    const char *NotFilterDataBaseFilePath = "../../server/backend/not-filter-append.csv";
 
-    char path[1024];
-    int PathIndex = 0;
+    const char *FilterDataBaseFileName = "filter-append.csv";
+    const char *NotFilterDataBaseFileName = "not-filter-append.csv";
 
-    FILE *append = fopen("../../server/backend/selected-append.csv", "w");
-    FILE *all = fopen("../../server/backend/all-append.csv", "w");
-
-    printf("[+] startup parsing..");
-
-    for (;;)
+    FILE *DataBaseFile = fopen(BindDataBaseFilePath, "r");
+    FILE *FilterDataBase = FilterDataBase = fopen(FilterDataBaseFilePath, "w");;
+    FILE *NotFilterDataBase = fopen(NotFilterDataBaseFilePath, "w");;
+    for(;;)
     {
-        wsprintfA(path, "database/%d.csv", PathIndex++);
+        if(fgets(buffer, sizeof(buffer) - 1, DataBaseFile) == NULL) break;
 
-        fp = fopen(path, "r");
-        if (fp == NULL)
-            break;
-
-        OpenCount += 1;
-
-        //printf("[+] path='%s'\n", path);
-
-        if (fgets(line, sizeof(line), fp) != NULL)
+        if(strstr(buffer, domain) != NULL)
         {
-            for (;;)
-            {
-                if (fgets(line, sizeof(line), fp) == NULL)
-                    break;
-
-                for (int i = 0; i != l; i += 1)
-                {
-                    GetCsvMember(parsed, line, filter[i]);
-
-                    if (filter[i] == 16)
-                    {
-                        if (strstr(parsed, domain) != NULL)
-                        {
-                            fprintf(append, "%s", WriteBuffer);
-                            fprintf(append, "%s\r\n", parsed);
-                            TotalLines += 1;
-                        }
-                        else if (strstr(parsed, "http://") != NULL)
-                        {
-                            fprintf(all, "%s", WriteBuffer);
-                            fprintf(all, "%s\r\n", parsed);
-                        }
-
-                        TotalSize += strlen(WriteBuffer) + strlen(parsed);
-
-                        ZeroMemory(WriteBuffer, sizeof(WriteBuffer));
-                        break;
-                    }
-                    else
-                    {
-                        if (filter[i] == 9)
-                        {
-                            sprintf(WriteBuffer, "%s%0004d%02d%02d, ", WriteBuffer, atoi(parsed), atoi(parsed + 6), atoi(parsed + 8));
-                        }
-                        else
-                        {
-                            sprintf(WriteBuffer, "%s%s, ", WriteBuffer, parsed);
-                        }
-                    }
-                }
-            }
+            fprintf(FilterDataBase, "%s", buffer);
+            FAddLineCount += 1;
         }
-        fclose(fp);
-    }
-    fclose(append);
-    fclose(all);
-
-    printf("\n[+] done!\n");
-
-    const int size = 1024;
-
-    int *years = (int *)malloc(TotalLines * sizeof(int));
-    char **list = (char **)malloc(TotalLines * sizeof(char *));
-    for (int i = 0; i != TotalLines; i += 1)
-    {
-        list[i] = (char *)malloc(size);
-    }
-
-    //Swap
-    DWORD ListIndex = 0;
-
-    append = fopen("../../server/backend/sort-append.csv", "r");
-    for (;;)
-    {
-        if (fgets(list[ListIndex], size - 1, append) == NULL)
-            break;
-
-        ListIndex += 1;
-        //printf("%s\n", list[ListIndex]);
-    }
-    fclose(append);
-
-    printf("[+] startup sorting.. line=%d\n", TotalLines);
-    bubble_sort(list, TotalLines);
-    printf("[+] done!\n");
-
-    printf("[+] write '../../server/backend/sort-append.csv'\n");
-
-    append = fopen("../../server/backend/sort-append.csv", "w");
-
-    for (int index = 0; index != TotalLines; index += 1)
-    { 
-        int CurrentDataTime = atoi(list[index]);
-
-        if(CurrentDataTime >= StartTime && CurrentDataTime <= EndTime)
+        else 
         {
-            fprintf(append, "%s", list[index]);
+            fprintf(NotFilterDataBase, "%s", buffer);
+            NAddLineCount += 1;
         }
     }
-    fclose(append);
+    fclose(NotFilterDataBase);
+    fclose(FilterDataBase);
+    fclose(DataBaseFile);
+
+    //sort
+    
+    char **LineBuffer = (char **)malloc(FAddLineCount * sizeof(char *));
+    for(int i = 0; i != FAddLineCount; i += 1)
+    {
+        LineBuffer[i] = malloc(BUFFER_SIZE);
+    }
+
+    FilterDataBase = fopen(FilterDataBaseFilePath, "r");
+    for(int i = 0;fgets(LineBuffer[i], BUFFER_SIZE, FilterDataBase) != NULL; i++);
+    fclose(FilterDataBase);
+
+    printf("[+] start bubble-sort..\n");
+    bubble_sort(LineBuffer, FAddLineCount);
     printf("[+] done!\n");
 
-    printf("[+] copying..\n");
+    printf("%s\n", FilterDataBaseFileName);
 
-
-    for (int i = 0; i != TotalLines; i += 1)
+    FilterDataBase = fopen(FilterDataBaseFilePath, "w");
+    for(int i = 0; i != FAddLineCount != 0; i ++)
     {
-        list[i] = (char *)malloc(1024);
+        fprintf(FilterDataBase, LineBuffer[i], FilterDataBaseFileName, i);
     }
-    free(list);
+    fclose(FilterDataBase);
+
+    for(int i = 0; i != FAddLineCount; i += 1)
+    {
+        free(LineBuffer[i]);
+    }
+    free(LineBuffer);
+
+    //sort
+
+    LineBuffer = (char **)malloc(NAddLineCount * sizeof(char *));
+    for(int i = 0; i != NAddLineCount; i += 1)
+    {
+        LineBuffer[i] = malloc(BUFFER_SIZE);
+    }
+
+    FilterDataBase = fopen(NotFilterDataBaseFilePath, "r");
+    for(int i = 0;fgets(LineBuffer[i], BUFFER_SIZE, FilterDataBase) != NULL; i++);
+    fclose(FilterDataBase);
+
+    printf("[+] start bubble-sort..\n");
+    bubble_sort(LineBuffer, NAddLineCount);
+    printf("[+] done!\n");
+
+    printf("%s\n", NotFilterDataBaseFileName);
+
+    FilterDataBase = fopen(NotFilterDataBaseFilePath, "w");
+    for(int i = 0; i != NAddLineCount != 0; i ++)
+    {
+        if(strstr(LineBuffer[i], domain) == NULL)
+        {
+            fprintf(FilterDataBase, LineBuffer[i], NotFilterDataBaseFileName, i);
+        }
+    }
+    fclose(FilterDataBase);
+
+    for(int i = 0; i != NAddLineCount; i += 1)
+    {
+        free(LineBuffer[i]);
+    }
+    free(LineBuffer);
 
     return 0;
 }

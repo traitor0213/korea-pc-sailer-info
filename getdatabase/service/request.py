@@ -123,7 +123,6 @@ PostData = {"schCheck": "",
 
 Response = requests.post(Url, params=PostData)
     
-print(PostData)
 
 f = open("htmls/tmp.html", "w", encoding="UTF-8")
 f.write(Response.text)
@@ -143,7 +142,6 @@ while(True):
 
     Response = requests.post(Url, params=PostData)
     
-    print(PostData)
 
     f = open("htmls/tmp.html", "w", encoding="UTF-8")
     f.write(Response.text)

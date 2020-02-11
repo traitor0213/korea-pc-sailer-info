@@ -116,7 +116,6 @@ while(True):
         break
         
     RequestParameter = "통신판매사업자_" + number + "_" + CityName + " " + name + ".csv"
-    print(RequestParameter)
 
     DownloadUrl = parse.quote(RequestParameter)
     DownloadUrl = parse.quote(DownloadUrl)
